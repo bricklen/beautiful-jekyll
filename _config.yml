@@ -25,9 +25,8 @@ description: A collection of tips and tricks, and some things I've learned over 
 navbar-links:
   About Me: "aboutme"
   Resources:
-    - Learn markdown: "http://www.markdowntutorial.com/"
-    - GitHub Pages: "https://pages.github.com/"
-  Home: "https://github.com/bricklen"
+    - GitHub Page: "https://github.com/bricklen"
+  Home: "http://bricklen.github.io"
 
 # Image to show in the navigation bar - image must be a square (width = height)
 # Remove this parameter if you don't want an image in the navbar
@@ -98,7 +97,7 @@ share-links-active:
 
 # How to display the link to the website in the footer
 # Remove this if you don't want a link in the footer
-url-pretty: "https://github.com/bricklen"
+url-pretty: "https://bricklen.github.io/"
 
 # --- Web Statistics Section --- #
 
