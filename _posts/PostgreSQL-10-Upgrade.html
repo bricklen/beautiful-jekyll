@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en-US">
+ <head>
+ <meta charset = "UTF-8">
+    <link href="https://fonts.googleapis.com/css?family=EB+Garamond" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="../css/styles.css" />
+     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+</head>
+<body>
+<div id="mySidenav" class="sidenav change-icon" onmouseover="openNav()" onmouseout="closeNav()">
+    <i class="fa fa-arrow-circle-o-right" style="font-size:20px;color:white" title="Hover to show navigation"></i>
+    <i class="fa fa-arrow-circle-o-left" style="font-size:20px;color:white" title="Hover to show navigation"></i>
+
+    <ul class="toc_list">
+        <li><a href="#the-challenge">The Challenge</a></li>
+        <li><a href="#topology">Topology</a></li>
+        <li><a href="#execution-of-the-plan">Execution of the Plan</a></li>
+            <li class="subli"><a href="#determine-the-hosts">1. Determine the Hosts</a></li>
+            <li class="subli"><a href="#pre-upgrade-settings">2. Pre-Upgrade Settings</a></li>
+            <li class="subli"><a href="#pause-alerting">3. Pause alerting</a></li>
+            <li class="subli"><a href="#set-facts">4. Set Facts</a></li>
+            <li class="subli"><a href="#install-the-version-of-postgres-you-are-going-to-upgrade-to-pg10">5. Install the version of Postgres you are going to upgrade to (PG10)</a></li>
+            <li class="subli"><a href="#set-outage-window">6. Set outage window</a></li>
+            <li class="subli"><a href="#block-database-server-access">7. Block database server access</a></li>
+            <li class="subli"><a href="#back-up-postgres-9.3-config-files">8. Back up Postgres 9.3 config files</a></li>
+            <li class="subli"><a href="#drop-incompatible-views-and-functions">9. Drop incompatible views and functions</a></li>
+            <li class="subli"><a href="#pg10-initdb">10. PG10 initdb</a></li>
+            <li class="subli"><a href="#pg_upgrade-dry-run-no-changes-made-yet">11. pg_upgrade dry run (no changes made yet)</a></li>
+            <li class="subli"><a href="#send-wal-to-remote-primary">12. Send WAL to remote primary</a></li>
+            <li class="subli"><a href="#stop-postgres-9.3">13. Stop Postgres 9.3</a></li>
+            <li class="subli"><a href="#set-up-postgres-config-files">14. Set up Postgres config files</a></li>
+            <li class="subli"><a href="#upgrade-the-active-primary-postgres-server">15. Upgrade the active primary Postgres server</a></li>
+            <li class="subli"><a href="#rsync-changes-to-the-remote-primary-replica">16. Rsync changes to the remote primary replica</a></li>
+            <li class="subli"><a href="#update-symlinks-and-replace-the-old-data-directory-with-the-new-one">17. Update symlinks and replace the old data directory with the new one</a></li>
+            <li class="subli"><a href="#mv-the-new-postgres-10-data-directory-to-pgdata">18.mv the new Postgres 10 data directory to $PGDATA</a></li>
+            <li class="subli"><a href="#add-recovery.conf-to-the-remote-primary-hot-standby">19. Add recovery.conf to the remote primary hot standby</a></li>
+            <li class="subli"><a href="#update-services">20. Update services</a></li>
+            <li class="subli"><a href="#start-postgres-10">21. Start Postgres 10</a></li>
+            <li class="subli"><a href="#check-system-catalogs-for-problems">22. Check system catalogs for problems</a></li>
+            <li class="subli"><a href="#minimal-analyze">23. Minimal ANALYZE</a></li>
+            <li class="subli"><a href="#update-extensions">24. Update extensions</a></li>
+            <li class="subli"><a href="#restart-postgres">25. Restart Postgres</a></li>
+            <li class="subli"><a href="#unblock-database-server-access">26. Unblock database server access</a></li>
+            <li class="subli"><a href="#start-services">27. Start services</a></li>
+            <li class="subli"><a href="#update-service-discovery-systems">28. Update service discovery systems</a></li>
+            <li class="subli"><a href="#remove-facts">29. Remove facts</a></li>
+            <li class="subli"><a href="#resume-alerting">30. Resume alerting</a></li>
+            <li class="subli"><a href="#analyze-vacuum">31. ANALYZE &amp; VACUUM</a></li>
+            <li class="subli"><a href="#test-indexes">32. Test indexes</a></li>
+            <li class="subli"><a href="#upgrade-remote-secondary-replica">33. Upgrade remote secondary replica</a></li>
+            <li class="subli"><a href="#clean-up-the-hosts">34. Clean up the hosts</a></li>
+            <li class="subli"><a href="#upgrade-active-secondary-replica-next-day">35. Upgrade active secondary replica [next day]</a></li>
+            <li class="subli"><a href="#failure-cases">Failure Cases</a></li>
+            <li class="subli"><a href="#notes">Notes</a></li>
+            <li class="subli"><a href="#extras">Extras</a></li>
+            <br>
+    </ul>
+</div>
+
+<script>
+/* Set the width of the side navigation to 250px and the left margin of the page content to 250px */
+function openNav() {
+    document.getElementById("mySidenav").style.width = "250px";
+    document.getElementById("main").style.marginLeft = "250px";
+}
+
+/* Set the width of the side navigation to 0 and the left margin of the page content to 0 */
+function closeNav() {
+    document.getElementById("mySidenav").style.width = "20px";
+    document.getElementById("main").style.marginLeft = "20px";
+}
+</script>
+
+
+<div id="main">
+<h1 id="postgresql-10-upgrade">PostgreSQL 10 Upgrade</h1>
+
+<h2 id="the-challenge"><BR>The Challenge</h2>
+<p>Upgrade approximately 1500 Postgres database clusters from version 9.3 to 10, in 6 data centres, with sizes ranging from ~1GB to 500+GB within a downtime window of 15 minutes (with a 30 minute outside maximum). Total size of all clusters was approximately 55TB.
+Almost all the database servers were virtual machines, running Linux, with various combinations of physical resources allocated to them (memory, CPU, disk).
+Every facet of the upgrade had to be executed programatically, with no manual steps, and must not exceed the stated maintenance window.
+Additionally, upgrades must be performed with minimal measurable storage I/O and network impact, to reduce any “noisy neighbour” impact to other VM’s.
+</p>
+<p><strong>Note to readers</strong>: The upgrade steps for the “upgrade-from&quot; Postgres version in this document should be nearly identical for all versions of Postgres from 9.2 - 9.6 (not just Postgres 9.3 which was the version we upgraded from). That being said, if these steps are going to be followed in production, test each one first to ensure they are complete, and correct, in your environment.<BR>The usual disclaimers apply: we are not liable or responsible is anyone chooses to follow these steps and bad things happen.</p>
+<p>
+    Special thanks to the other members of our team, Mike Bennett and <a href="https://github.com/dgorley">Doug Gorley</a>. Mike was the team lead, project manager, and juggler of too many meetings. He did a phenomenal job of coordinating the work and keeping the project on track, and successfully managed expectations at every step of the process. Doug was the primary developer/automator/DevOps person and wrote all the Python and Jenkins jobs to link and execute the tasks. The third member of the PG10 upgrade trio was <a href="https://github.com/bricklen">Bricklen Anderson</a>, the Postgres DBA and the designer/architect of the project.
+    <BR>
+    As with any major undertaking, it takes many people to design, implement, test, and execute a significant project and this one was no different. There are too many to name, but I’d to thank the many contributors that ensured this project was a success, including the QA team (especially QA Architect, <a href="https://www.xmatters.com/author/deepa-guna">Deepa Guna</a>), Customer Support, Engineering Support, and IT Operations.
+</p>
+<h2 id="topology"><BR>Topology</h2>
+We’ll call the primary production Postgres cluster and it’s associated hot standby’s a <code>replica set</code>, since a database “cluster” in Postgres <a href="https://www.postgresql.org/docs/current/static/creating-cluster.html">terminology</a> refers to “<em>a collection of databases that is managed by a single instance of a running database server</em>”. Our replica sets typically consist of a primary and three hot standby servers spread across data centres in multiple geographic regions of North America, EMEA, and APAC.
+<BR><img src="https://d2mxuefqeaa7sj.cloudfront.net/s_C93100B6D4608946B98FA1A05EBD5227C9AD3CA02FEEB5FC092CFF49E529462F_1518901754777_topology.png" alt="Typical replica set" />
+
+<h2 id="the-plan"><BR>The Plan</h2>
+To start, we had to come up with a plan to accomplish the upgrades within the short maintenance window, with no room for failures that could violate the outage window agreement. Here is how we approached this:
+<ul>
+    <li>Define the working parameters, be clear on the goals, and brainstorm about all the failure cases we could conceive of.</li>
+    <li>Define the upgrade process itself. This included the <code>active primary</code> all the way through to the <code>remote secondary</code> replica.</li>
+    <li>Determine all services that can access the databases, and test the impact of the Postgres major version upgrade in our dev and staging environments. This included the many micro-services, upgrading to the newest JDBC version, connection poolers, various monitoring tools, internal reporting tools, and catching and fixing any differences between dev, test, staging, and production environments. JDBC turned out to be an important thing to test; we discovered that one service was relying on deprecated functionality in JDBC, and we needed to make some changes in the configuration to get it work properly after the upgrade. It took some time to track down, so testing well in advance was important.</li>
+    <li>Determine the new PG 10 settings we wanted or needed to implement, including any changes to deprecated views, tables, and functions. We will be using <a href="https://www.postgresql.org/docs/current/static/logical-replication.html">Logical Replication</a> in the future, so a few changes to the <code>postgresql.conf</code> were also necessary.
+    <li>Test the new settings thoroughly in the many dev, test, and staging environments, which included extensive <a href="https://en.wikipedia.org/wiki/Soak_testing">soak testing</a>.</li>
+    <li>Document the steps we expect to execute.</li>
+    <li>Test the process we came up with.</li>
+    <li>Fix the docs, fix the steps, and work with the Engineering team to get all changes we needed looped back into our application and various micro-services.</li>
+    <li>Put the steps into a Jenkins pipeline to execute.</li>
+    <li>Test, find problems, fix. Lather, rinse, repeat.</li>
+</ul>
+
+<h2 id="execution-of-the-plan"><BR>Execution of the Plan</h2>
+<p>Note: The actual steps were all executed using <a href="https://jenkins.io/">Jenkins</a> pipelines, which allowed us to execute the upgrades programatically and in parallel, and logged all output in a usable fashion.
+<BR>
+This document shows the steps and the commands that are not Jenkins-specific, and have been sanitized to be much less specific to our environments, with the intention that others may benefit from the commands listed in this doc.</p>
+<i class="fa fa-info-circle"></i> Steps <a href="#block-database-server-access">7</a> through <a href="#unblock-database-server-access">26</a> comprise the actual downtime window, when access to the database servers has been blocked.
+<p>🎉 Allow me to take a moment to give shout-out to our QA team, who did an enormous amount of testing prior to going live with this huge project - it was critical work, and proved its value in the near-flawless upgrades we conducted.</p>
+The steps in this document assume the following settings (change to suit your env):
+<pre>
+<code>PGBASEDIR=/var/lib/pgsql
+PGDATA=${PGBASEDIR}/data # same as PGDATAOLD
+PGDATAOLD=${PGBASEDIR}/data
+PGDATANEW=${PGBASEDIR}/data10
+PGBINOLD=/usr/pgsql-9.3/bin
+PGBINNEW=/usr/pgsql-10/bin
+PGPORT=5432</code>
+</pre>
+All steps are executed as the <code>postgres</code> OS user unless otherwise noted.
+<p>Alright, it's time for the nitty gritty, the Postgres upgrade steps themselves…</p>
+
+<h2 id="determine-the-hosts"><BR>1. Determine the Hosts</h2>
+<p>For every replica set, determine the IP or host address for each database cluster, and their functions. As mentioned, our servers function as:</p>
+<ul>
+<li><code>active primary</code></li>
+<li><code>active secondary</code></li>
+<li><code>remote primary</code></li>
+<li><code>remote secondary</code></li>
+</ul>
+
+<h2 id="pre-upgrade-settings"><BR>2. Pre-upgrade settings</h2>
+<p>If there are jobs that may run or could run when the start of the scheduled maintenance window commences, those jobs should be prevented from starting.
+<BR><strong>Note</strong>: Execute this step up to a few hours before your window, so there is no chance of a job starting before the window and running long.</p>
+<p>For example, if database backups commonly take two hours to run, create a <code>do_not_execute_backup</code> file on the database servers four hours in advance, and in your scheduling service (eg. cron) check for the existence of that file. If found, do not execute the backup.</p>
+
+<pre>
+# Example cron entry.
+# Only execute the command if the flag does not exist.
+0 7,17,23 * * * [ ! -e &#39;/path/to/do_not_execute.flag&#39; ] &amp;&amp; /path/to/backup_script.sh
+</pre>
+
+<p>This would apply to any other tasks that might run during the upgrade, for example. <a href="https://en.wikipedia.org/wiki/Extract,_transform,_load">ETL</a>, long-running reports, scheduled maintenance tasks, or other business-specific jobs.</p>
+<i class="fa fa-info-circle"></i> If there is any notification to clients and stakeholders that must be done well in advance, this is when that would happen.
+<p>At some point between now and the start of the outage window, you could take bootstrap backups of databases to be upgraded. This is one of several methods to meet RPO’s, and these occur before and after the PG 10 upgrades. In our case a “bootstrap backup” is a fast, minimal backup of all the tables that are critical to the core business. These backups answer the question “What data is necessary to get clients back up and running again with critical functionality?”. These backups could be exported as plain-text backups for maximum portability between Postgres versions (not critical, but sensible).</p>
+<h2 id="pause-alerting"><BR>3. Pause alerting</h2>
+<p>For each alerting application you are using, pause the alerting capabilities prior to continuing. For example, if you are using Pingdom, Sensu, and <a href="https://www.xmatters.com">xMatters</a>, execute the relevant API calls to prevent any page-outs for the hosts you are working on.</p>
+<h2 id="set-facts"><BR>4. Set Facts</h2>
+<p><em>User: sudo</em><br>We are using Puppet’s <a href="https://docs.puppet.com/facter/">Facter</a> to track the server-and-role-specific details (aka “facts”) on the servers, and the states that our micro-services and tooling depend on. At the start of the process we set a Fact called <code>pg10_upgrade_in_progress</code> to <code>true</code>. Any services that have been configured to read that file will know to follow the appropriate branch of operations if the upgrade process is in flight.</p>
+<h2 id="install-the-version-of-postgres-you-are-going-to-upgrade-to-pg10"><BR>5. Install the version of Postgres you are going to upgrade to (PG10)</h2>
+<p><em>User: sudo</em><br>Choose the <a href="https://yum.postgresql.org/repopackages.php#pg10">PGDG</a> package that corresponds to your linux distribution.</p>
+<p>Because our environments run a mix of RedHat/CentOS 6 and 7, different packages were needed for each distribution and version. We installed the rpms using <code>rpm -Uvh</code> rather than via <code>yum</code> because we needed to control the exact packages and actions (no side-effects), though that required we install packages in a specific order to satisfy dependencies.</p>
+<p><strong>Tip:</strong> To save time and bandwidth during the upgrades, download the packages ahead of time and save them to a location accessible to the database servers within the LAN.
+<strong>Note</strong>: Be sure to verify the checksums of each package if you are building from source.</p>
+
+<strong>RHEL/Centos 6</strong> <a href="https://download.postgresql.org/pub/repos/yum/10/redhat/rhel-6-x86_64/">https://download.postgresql.org/pub/repos/yum/10/redhat/rhel-6-x86_64/</a>
+<br><code>libicu</code> packages: <a href="http://mirror.centos.org/centos/6/os/x86_64/Packages/">http://mirror.centos.org/centos/6/os/x86_64/Packages/</a>
+
+<p><strong>RHEL/Centos 7</strong> <a href="https://download.postgresql.org/pub/repos/yum/10/redhat/rhel-7-x86_64/">https://download.postgresql.org/pub/repos/yum/10/redhat/rhel-7-x86_64/</a>
+<br><code>libicu</code> packages: <a href="http://mirror.centos.org/centos/7/os/x86_64/Packages/">http://mirror.centos.org/centos/7/os/x86_64/Packages/</a>
+<p><strong>Packages to install</strong></p>
+<pre><code># Note that the order is important (because of dependencies) if using &quot;rpm -Uvh&quot;
+libicu.x86_64
+libicu-devel.x86_64
+
+postgresql10-libs.x86_64
+postgresql10.x86_64
+postgresql10-server.x86_64
+postgresql10-debuginfo.x86_64
+postgresql10-contrib.x86_64
+postgresql10-devel.x86_64
+pg_catcheck10.x86_64
+amcheck_next10.x86_64</code></pre>
+<p><strong>Installation commands</strong></p>
+<pre><code># For example, for CentOS 7
+# Supply paths to where the rpms are
+sudo rpm -Uvh pgdg-centos10-10-2.noarch.rpm  # Change this to correct pgdg rpm
+sudo rpm -Uvh libicu-50.1.2-15.el7.x86_64.rpm
+sudo rpm -Uvh libicu-devel-50.1.2-15.el7.x86_64.rpm
+sudo rpm -Uvh postgresql10-10.1-1PGDG.rhel7.x86_64.rpm
+sudo rpm -Uvh postgresql10-contrib-10.1-1PGDG.rhel7.x86_64.rpm
+sudo rpm -Uvh postgresql10-debuginfo-10.1-1PGDG.rhel7.x86_64.rpm
+sudo rpm -Uvh postgresql10-devel-10.1-1PGDG.rhel7.x86_64.rpm
+sudo rpm -Uvh postgresql10-libs-10.1-1PGDG.rhel7.x86_64.rpm
+sudo rpm -Uvh postgresql10-server-10.1-1PGDG.rhel7.x86_64.rpm
+sudo rpm -Uvh amcheck_next10-1.3-1.rhel7.x86_64.rpm</code></pre>
+<h2 id="set-outage-window"><BR>6. Set outage window</h2>
+<ul>
+<li>Alert any customers or stakeholders that the downtime is about to commence.</li>
+<li>Stop any micro-services or applications that are talking to the database server you are about to upgrade.</li>
+<li>Optionally set up <a href="https://httpstatuses.com/503">503 HTTP</a> codes and <a href="https://www.haproxy.org/">haproxy</a> redirects to give a clean front to clients, and for applications to take advantage of the 503 HTTP error codes.</li>
+</ul>
+<h2 id="block-database-server-access"><BR>7. Block database server access</h2>
+<p><em>User: sudo</em></p>
+<pre><code>Status of Postgres on servers in replica set:
+active primary=UP, active secondary=UP, remote primary=UP, remote secondary=UP</code></pre>
+<p>This is the start of the true outage window. How this is done depends on your environment. In our case, a local firewall rule on the db server was the most effective and simplest method to prevent interruptions to the upgrade. If server access is required, but only access to the Postgres cluster must be regulated, then selectively updating the <code>pg_hba.conf</code> will work until the PG 9.3 cluster is stopped.
+<br>Be aware that access to the PG10 cluster will be allowed as soon as Postgres is started after the upgrade, <em>unless you make the same (blocking) pg_hba.conf settings to the PG10 pg_hba.conf</em></p>
+<p><strong>iptables block server access</strong>:</p>
+<pre><code>sudo iptables -I INPUT -j DROP -p tcp --destination-port ${PGPORT} -i eth0</code></pre>
+<h2 id="back-up-postgres-9.3-config-files"><BR>8. Back up Postgres 9.3 config files</h2>
+<p><em>User: postgres</em></p>
+<pre><code># Make a backup directory about the $PGDATAOLD directory
+mkdir -p ${PGBASEDIR}/confbkp
+
+# Copy over the conf files with a new file extension
+cp -p ${PGDATAOLD}/postgresql.conf ${PGBASEDIR}/confbkp/postgresql.conf.93
+cp -p ${PGDATAOLD}/pg_hba.conf ${PGBASEDIR}/confbkp/pg_hba.conf.93
+cp -p ${PGDATAOLD}/recovery.conf ${PGBASEDIR}/confbkp/recovery.conf.93 # if exists
+# If any other conf files are in use, back up those too.</code></pre>
+<h2 id="drop-incompatible-views-and-functions"><BR>9. Drop incompatible views and functions</h2>
+<p><em>User: postgres</em>
+<br>Changes to the <a href="https://www.postgresql.org/docs/current/static/monitoring-stats.html#PG-STAT-ACTIVITY-VIEW">pg_stat_activity</a> view rendered some of the views in our databases unusable, and more importantly, were causing the <code>pg_upgrade</code> process to fail if those views and functions were not dropped <strong>before</strong> the upgrade was executed.</p>
+<p>If incompatible views and functions exist in your environment, remove them at this point. Some incompatibilities are listed at:
+<a href="https://wiki.postgresql.org/wiki/New_in_postgres_10#Backwards-Incompatible_Changes">https://wiki.postgresql.org/wiki/New_in_postgres_10#Backwards-Incompatible_Changes</a>
+<br>
+<a href="https://wiki.postgresql.org/wiki/New_in_postgres_10#Backwards-Incompatible_Changes">http://paquier.xyz/postgresql-2/postgres-10-incompatible-changes/</a>
+</p>
+<h2 id="pg10-initdb"><BR>10. PG10 initdb</h2>
+<p><em>User: postgres</em></p>
+This step creates the new Postgres 10 cluster, which starts empty, but will be relinked to the files in the existing data directory via pg_upgrade.
+<pre><code># As postgres OS user
+${PGBINNEW}/initdb --pgdata=&quot;$PGDATANEW&quot; --encoding=UTF8 --data-checksums</code></pre>
+<h2 id="pg_upgrade-dry-run-no-changes-made-yet"><BR>11. pg_upgrade dry run (no changes made yet)</h2>
+<p><em>User: postgres</em><br>This is a dry-run of the <a href="https://www.postgresql.org/docs/current/static/pgupgrade.html">pg_upgrade</a> command against the <code>active primary</code> database server. (<em>dry-run</em> means that no changes are made, only the output of what it <em>would</em> have run).</p>
+<pre><code># As postgres OS user, cd to the dir above $PGDATA
+cd ${PGBASEDIR}
+
+# The &quot;jobs&quot; setting is based on the number of CPU cores - 1,
+#   though in our environments we opted for a max of 4 cores.
+# The &quot;time&quot; command is to get a wall-clock timing of the operation.
+time ${PGBINNEW}/pg_upgrade \
+--old-bindir=${PGBINOLD} \
+--new-bindir=${PGBINNEW} \
+--old-datadir=${PGDATAOLD} \
+--new-datadir=${PGDATANEW} \
+--old-port=${PGPORT} \
+--new-port=${PGPORT} \
+--jobs=$(nproc | awk &#39;{{print ($1 &gt; 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)}}&#39;) \
+--link \
+--username=postgres
+--check # &lt;-- this is dry-run option</code></pre>
+<h2 id="send-wal-to-remote-primary"><BR>12. Send WAL to remote primary</h2>
+<p><em>User: postgres</em><br>The purpose of this step is to flush any changes to the Write Ahead Logs (WAL), and send the current WAL segment(s) to the <code>remote primary</code> replica. This step is not strictly necessary, as a graceful shutdown will generate a final WAL segment on the <code>active primary</code> to be shipped to the <code>remote primary</code> (assuming you are using WAL shipping, if you are using only Streaming Replication then this is unnecessary).
+<br>
+Note that if you are using pg_receivexlog/<a href="https://www.postgresql.org/docs/current/static/app-pgreceivewal.html">pg_receivewal</a> the need to ship WALs is virtually eliminated, as long as your WAL is sending to the replicas successfully.
+</p>
+<pre><code># Execute on the active primary.
+# The examples below assume you are using the psql client, if not
+#   use whichever client works in your environment.
+psql -h localhost -d postgres -U postgres -p ${PGPORT} -qtAXc &quot;checkpoint;&quot;
+psql -h localhost -d postgres -U postgres -p ${PGPORT} -qtAXc &quot;select pg_switch_xlog();&quot;
+
+# Note: &quot;pg_switch_xlog()&quot; was renamed to &quot;pg_switch_wal()&quot; in PG10</code></pre>
+<h2 id="stop-postgres-9.3"><BR>13. Stop Postgres 9.3</h2>
+<p><em>User: sudo</em>
+<br>Each Postgres cluster in the replica set must be stopped, though the <code>active secondary</code> is optional (it gets upgraded to PG 10 the following day). Stop the Postgres servers in the replica set, in order from <code>active primary</code>, to <code>active secondary</code>, to <code>remote primary</code>, to <code>remote secondary</code>. If you do leave the <code>active secondary</code> running, you’ll want to change the <code>recovery.conf</code> to not stream from the <code>active primary</code> (assuming that’s how you have it configured).</p>
+<p><strong>Tip:</strong> The <code>remote primary</code> should given some time to apply all the WALs from the upstream primary, so that it is fully-consistent and the upcoming rsync (step #16) ships only the few deltas.</p>
+<p>If you’d like to confirm the <code>remote primary</code> has applied the WALs from the <code>active primary</code>:</p>
+<ol style="list-style-type: decimal">
+<li>On the <code>active primary</code>:
+<pre><code># As postgres, in the postgres database (or really, any db)
+checkpoint;
+SELECT pg_switch_xlog();
+SELECT pg_current_xlog_location(); -- keep track of this WAL offset
+</code></pre></li>
+<li>On the <code>remote primary</code>:
+<pre><code># As postgres, in the postgres database
+# Returns the replication lag in Megabytes
+SELECT ROUND(pg_xlog_location_diff ( '<the WAL offset from step #1>', pg_last_xlog_replay_location() ) / 1000000::NUMERIC,3) as replication_lag_mb
+</code></pre></li>
+<li>Stop the <code>active primary</code> Postgres cluster:
+<pre><code># Starting/stopping Postgres depends on how your environment is set up, so use
+# the appropriate method for your environment.
+# Execute a clean, fast shutdown (&quot;-m fast&quot;).
+sudo /sbin/service postgresql stop -m fast
+</code></pre></li>
+</ol>
+<h2 id="set-up-postgres-config-files"><BR>14. Set up Postgres config files</h2>
+<p><em>User: postgres</em><br>Create the <code>custom_conf</code> directory under <code>$PGDATANEW</code></p>
+<pre><code># As postgres OS user
+mkdir -p ${PGDATANEW}/custom_conf</code></pre>
+<p>Append (as the very last line) to your PG10 <code>postgresql.conf</code> the new custom config directory. It is the last line because you want the settings from the files in the <code>custom_conf</code> directory to override anything that is in the default <code>postgresql.conf</code>.</p>
+<pre><code>echo &quot;include_dir = &#39;custom_conf&#39;&quot; &gt;&gt; ${PGDATANEW}/postgresql.conf</code></pre>
+<p>Add the custom settings file(s) to the new <code>custom_conf</code> directory.
+<br><strong>Note</strong>: If you have multiple files in that custom directory, name them in order you’d like them applied, as the last-applied file overrides any earlier settings of the same name.</p>
+<pre><code>010_postgresql.conf
+020_bgwriter.conf        # optional
+030_vacuum.conf          # optional
+040_memory_settings.conf # optional</code></pre>
+<p>Don’t forget to add any custom pg_hba settings to your new <code>${PGDATANEW}/pg_hba.conf</code> file.</p>
+<h2 id="upgrade-the-active-primary-postgres-server"><BR>15. Upgrade the <code>active primary</code> Postgres server</h2>
+<p><em>User: postgres</em><br>This step is the heart of the upgrade process; it is the real <code>pg_upgrade</code> command.</p>
+<pre><code># As postgres OS user, move to the directory above $PGDATA
+cd ${PGBASEDIR}
+
+# This is NOT a dry run!
+time ${PGBINNEW}/pg_upgrade \
+--old-bindir=${PGBINOLD} \
+--new-bindir=${PGBINNEW} \
+--old-datadir=${PGDATAOLD} \
+--new-datadir=${PGDATANEW} \
+--old-port=${PGPORT} \
+--new-port=${PGPORT} \
+--jobs=$(nproc | awk &#39;{{print ($1 &gt; 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)}}&#39;) \
+--link \
+--username=postgres</code></pre>
+
+<p><strong>Note:</strong> We chose to do an in-place <code>pg_upgrade</code> using <a href="https://en.wikipedia.org/wiki/Hard_link">hard links</a> (<code>--link</code>) for two main reasons:</p>
+<ol style="list-style-type: decimal">
+<li>It is much faster than using symlinks and copying the <code>$PGDATA</code> data files around, particularly given our short window of downtime to accomplish each upgrade.</li>
+<li>Due to the size of some of the databases, doubling the on-disk size until the upgrade finished was risky enough to warrant the hard links method.</li>
+</ol>
+<p>The drawback of course is that once you start your new Postgres cluster you are not able to use the original cluster (more on this in the upcoming <a href="#update-symlinks-and-replace-the-old-data-directory-with-the-new-one">Update symlinks</a> section).</p>
+<p>How the hard links work with pg_upgrade is like this:</p>
+<ul>
+<li>The data files under <code>$PGDATA/</code> are associated to Postgres 9.3.</li>
+    <li>The PG10 <a href="https://www.postgresql.org/docs/current/static/app-initdb.html">initdb</a> command creates new system catalogs.</li>
+<li>pg_upgrade uses hard links to re-associate the data files in the PG 9.3 cluster to the PG 10 cluster. This is possible because every file is identified by the <a href="https://en.wikipedia.org/wiki/Inode">inode</a>, and may have multiple file names. The hard link method takes advantage of this, so the data file name can be the same (or different) in both Postgres clusters, but both names point to the same file on your storage volume.</li>
+</ul>
+<p><strong>Warning:</strong> Check the logs emitted by <code>pg_upgrade</code> for any failures. If there are any failures, do not proceed on to the next step. In our upgrades, we ran into a case where one of the pg_upgrade executions failed and we didn’t catch the failure message in time, before the rsync to the <code>remote primary</code> occurred. In that case, fortunately it occurred in a prod-like test environment so we were able to update our monitoring to detect any subsequent cases. In this instance, the recovery was straightforward because the database was only a few GB in size and we were able to do it within the maintenance window:</p>
+<ul>
+<li>From the <code>active secondary</code> execute a Postgres 9.3 plaintext backup.</li>
+<li>Copy backup to <code>active primary</code></li>
+<li>Rename existing db to <code>&lt;db&gt;_old</code></li>
+<li>Create new db (mirror the original one)</li>
+<li>Restore the plaintext backup from 9.3 into PG 10 using <code>psql</code></li>
+</ul>
+<h2 id="rsync-changes-to-the-remote-primary-replica"><BR>16. Rsync changes to the remote primary replica</h2>
+<p><em>User: postgres</em><br>Read the highlighted <strong>Warning</strong> a few paragraphs down before proceeding…</p>
+<p>In the Postgres 9.3 <code>$PGDATAOLD</code> data directory, optionally remove the <code>pg_xlog</code> directory before <code>rsync</code>’ing to the remote primary replica. Removing the <code>pg_xlog</code> directory is done so the rsync over the WAN is faster, as the remote Postgres cluster does not need the old 9.3 WAL segments.</p>
+<p>This is “optional” because you may have a longer downtime window and the transfer to the <code>remote primary</code> replica is allowed to take longer, or maybe your <code>wal_keep_segments</code> setting is low and there are few WALs to rsync. By default, we use a very high <code>wal_keep_segments</code> setting in the Postgres clusters to mitigate physical replication from breaking in the face of an extended network outage between data centres.</p>
+<p><strong>Note</strong>: The removal of <code>pg_xlog</code> was done in the downtime window because we needed the rsync to complete in as little time as possible, to stay within the allotted window. <em>On the Disaster Recovery (DR) front</em>: After the rsync completes, in the event of a disaster we still have three viable up-to-date failover candidates. Two of them are still at Postgres 9.3 (the <code>active secondary</code> and <code>remote secondary</code> replicas), and the <code>remote primary</code> is now at PG 10.</p>
+<p><strong>Warning:</strong> Do NOT remove the 9.3 <code>pg_xlog</code> directory if you want to be able to start up the old cluster. At this stage, you <em>can</em> still start the original Postgres 9.3 cluster without having lost any data. Once the <code>pg_xlog</code> dir is removed, or the new Postgres 10 cluster is <code>mv</code> ‘d to replace the 9.3 cluster (step #17), you CANNOT go back to 9.3.</p>
+<p><strong>IMPORTANT</strong>: Executing this <code>rm</code> command is the Point of No Return!</p>
+<pre><code>rm -f ${PGDATAOLD}/pg_xlog</code></pre>
+<p>The <code>active primary</code> cluster is still stopped (we are still in our downtime window), so we are going to rebuild the <code>remote primary</code> replica by rsync’ing only the deltas to it. Without the <code>pg_xlog</code> and <code>pg_log</code> directories, this should be quick (seconds to minutes, depending on cluster size, network speeds, and if the remote replica was fully caught up when it was shut down).</p>
+<pre><code># rsync the active primary cluster to the remote primary replica.
+# This step is done from the active primary, a level above the PG data directory.
+cd ${PGBASEDIR}
+
+time rsync --archive --progress --delete --hard-links --no-perms \
+--omit-dir-times --size-only -z --no-inc-recursive \
+--exclude &#39;pg_log/*&#39; \
+--exclude &#39;pg_xlog/*&#39; \
+&quot;$PGDATAOLD&quot; ${REMOTE_PRIMARY_REPLICA}:${PGBASEDIR}</code></pre>
+<p>Set a Fact on the <code>remote primary</code> replica so that services know that it is now at Postgres version 10. This is removed once all servers are at PG 10, and code paths have been updated to no longer rely on that Fact’s existence.</p>
+<pre><code>echo &quot;is_pg_10=true&quot; &gt; /etc/facter/facts.d/is_pg_10.txt</code></pre>
+
+<p><i class="fa fa-question-circle"></i> <strong>Head-scratcher</strong>
+<br>
+One oddity we encountered a few times that has to-date not been explained well enough for my liking is an issue with the <code>remote primary</code> not coming up cleanly after the rsync, with timeline errors being thrown in the log.
+My current theory is that pg_upgrade is resetting the <a href="https://github.com/postgres/postgres/blob/REL_10_STABLE/src/bin/pg_upgrade/pg_upgrade.c#L500">timeline to 1</a>, and in some cases we have previously failed-over which incremented the timeline at some point far in advance of the pg_upgrade run. It is possible that we didn’t copy the history file over to the <code>remote primary</code> properly, so it could not determine that the timeline had been reset - a timeline increment would likely have “just worked” thanks to <code>recovery_target_timeline=latest</code> in the <code>recovery.conf</code>, but a timeline decrement needs different handling.
+<BR>This is only a theory though, as the rare cases where replication did not work properly the first time we had to kick off a physical replication rebuild job without delay, thus removing any chance for further investigation.
+</p>
+
+<h2 id="update-symlinks-and-replace-the-old-data-directory-with-the-new-one"><BR>17. Update Symlinks and replace the old data directory with the new one</h2>
+<p><em>User: sudo</em><br>In our servers, we have a few symlinks we use for convenience. Update those at this point.</p>
+<pre><code>sudo rm -f /usr/pgsql
+sudo rm -f /usr/bin/pg_config
+sudo rm -f /usr/pgsql/bin/pg_config
+sudo ln -s ${PGBINNEW} /usr/pgsql
+sudo ln -s ${PGBINNEW}/pg_config /usr/bin/pg_config</code></pre>
+
+<h2 id="mv-the-new-postgres-10-data-directory-to-pgdata"><BR>18.  <code>mv</code> the new Postgres 10 data directory to <code>$PGDATA</code></h2>
+<p><em>User: postgres</em><br><strong>WARNING</strong>: After this point the original Postgres 9.3 CANNOT be restarted, you can only move ahead with the upgrade. Of course, this warning <strong>only</strong> applies if you did not remove <code>pg_xlog</code> in step #16. If you did, <strong><em>that</em></strong> was the Point of No Return.</p>
+<pre><code># As postgres OS user
+# Do this on both active primary and remote primary.
+# There is no going back after these steps!
+mv ${PGDATAOLD} ${PGDATAOLD}93
+mv ${PGDATANEW} ${PGDATAOLD}</code></pre>
+<h2 id="add-recovery.conf-to-the-remote-primary-hot-standby"><BR>19. Add recovery.conf to the <code>remote primary</code> hot standby</h2>
+<p><em>User: postgres</em><br>On the <code>remote primary</code> replica, copy the previously-backed-up <code>recovery.conf</code> to <code>$PGDATAOLD</code> or replace it with a PG-10 specific one. <strong>Note</strong>: “$PGDATAOLD” is now pointing to Postgres 10, not 9.3, so don’t be confused by the <code>OLD</code> suffix.</p>
+<pre><code># Modify the PG10 recovery.conf as necessary
+cp -p ${PGBASEDIR}/confbkp/recovery.conf.93 ${PGDATAOLD}/recovery.conf</code></pre>
+<h2 id="update-services"><BR>20. Update services</h2>
+<p><em>User: sudo</em><br>Update the System V or <a href="https://github.com/systemd/systemd">systemd</a> services to be able to stop/start Postgres, and have it start on server boot. Choose the appropriate method for your server.</p>
+<pre><code># init.d symlink
+if [ -e /etc/init.d/postgresql ]; then
+    sudo -i ln -f -s /etc/init.d/postgresql-10 /etc/init.d/postgresql
+    sudo -i chkconfig --level 345 postgresql-10 on
+fi
+
+# systemd symlink
+if [ -e /etc/systemd/system/postgresql.service ]; then
+    sudo -i ln -f -s /etc/systemd/system/postgresql-10.service /etc/systemd/system/postgresql.service
+    sudo systemctl daemon-reload
+fi</code></pre>
+<h2 id="start-postgres-10"><BR>21. Start Postgres 10</h2>
+<p><em>User: sudo</em><br>Start Postgres 10 on the <code>active primary</code>, then the <code>remote primary,</code> using whichever command is appropriate for your environment.</p>
+<pre><code>sudo /sbin/service postgresql start</code></pre>
+<h2 id="check-system-catalogs-for-problems"><BR>22. Check system catalogs for problems</h2>
+<p><em>User: postgres</em><br><em>[Optional but recommended]</em>, Test the integrity of your Postgres system catalogs in the <code>active primary</code> using <a href="https://github.com/EnterpriseDB/pg_catcheck">pg_catcheck</a> before opening the system up for use.</p>
+<h2 id="minimal-analyze"><BR>23. Minimal ANALYZE</h2>
+<p><em>User: postgres</em><br>Below is an example shell script that can be run in the downtime window to gather basic statistics for the query planner, so when access to the databases is restored, incoming queries do not encounter a statistics-less database (which could result in terrible query plans until stats were gathered, and indeed, this happened in our earlier upgrades!). Unfortunately, pg_upgrade does not yet have the ability to copy over statistics from the cluster being upgraded from but there was some discussion in the Postgres mailing lists that it might be supported in a future version of pg_upgrade.</p>
+<pre><code>#!/usr/bin/env bash
+# Purpose:
+#   Execute a series of fast, parallelized ANALYZE commands against
+#   the top tables, ordered by index scan counts.
+#   &quot;--jobs&quot; flag requires Postgres 9.5+
+# Usage: bash minimal_analyze.sh &quot;your_db_name&quot;
+# Can change the LIMIT from 30 tables to a value more appropriate for your env.
+set -o errexit
+set -o pipefail
+set -o nounset
+
+DB_TO_USE=$1
+
+# Parallel jobs count set to 10, tweak as necessary.
+if [ -n &quot;$DB_TO_USE&quot; ]; then
+    VAC_QUERY=&quot;WITH t AS (
+        SELECT &#39;-t &#39;&#39;&#39;||
+            quote_ident(schemaname)||&#39;.&#39;||
+            quote_ident(relname)||&#39;&#39;&#39;&#39; AS tables_to_analyze
+        FROM pg_catalog.pg_stat_user_tables
+        ORDER BY idx_scan DESC NULLS LAST
+        LIMIT 30)
+    SELECT &#39;vacuumdb --dbname=&#39;&#39;&#39;||
+        current_database()||
+        &#39;&#39;&#39; --analyze-only --jobs=10 &#39;||
+        string_agg(tables_to_analyze, &#39; &#39;)
+    FROM t&quot;;
+
+    # Generate the vacuumdb command to run, using the top tables,
+    #   sorted by index scan count descending.
+    # &quot;timeout 10&quot; will cancel the command after 10 seconds, because
+    #   this query should be a very quick query to execute.
+    VAC_CMD=$(timeout 10 psql -d &quot;$DB_TO_USE&quot; -U postgres -h localhost -p ${PGPORT} --pset=pager=off -qtAXc &quot;$VAC_QUERY&quot; 2&gt;/dev/null)
+
+    # Adjust the stats target number according to how long the ANALYZE
+    #   takes. If you are going to go past your allotted maintenance window,
+    #   drop the default_statistics_target lower for subsequent runs.
+    timeout 10 psql -h localhost -d postgres -U postgres -p ${PGPORT} \
+      -qtAXc &#39;ALTER SYSTEM SET default_statistics_target=5&#39; \
+      -qtAXc &#39;SELECT pg_reload_conf()&#39;
+
+    # Execute the vacuumdb command.
+    eval &quot;$VAC_CMD&quot;
+
+    # Reset the cluster-wide default_statistics_target setting.
+    # Note: Must ensure default_statistics_target is reset, otherwise the temporary
+    #   low setting could result in future suboptimal query plans.
+    timeout 10 psql -h localhost -d postgres -U postgres -p ${PGPORT} \
+      -qtAXc &#39;ALTER SYSTEM RESET default_statistics_target&#39; \
+      -qtAXc &#39;SELECT pg_reload_conf()&#39;
+fi</code></pre>
+<h2 id="update-extensions"><BR>24. Update extensions</h2>
+<p><em>User: postgres</em><br>Depending on which <a href="https://www.postgresql.org/docs/current/static/contrib.html">extensions</a> you are using, it might be as simple as executing in each database the output of:</p>
+<pre><code>SELECT &#39;ALTER EXTENSION &#39; || quote_ident(extname) || &#39; UPDATE;&#39; FROM pg_catalog.pg_extension;</code></pre>
+<p>It is <em>highly</em> recommended that you examine the docs for each extension you are using, before running <a href="https://www.postgresql.org/docs/current/static/sql-alterextension.html">ALTER EXTENSION</a>, in case there are scripts or extra steps required.</p>
+<h2 id="restart-postgres"><BR>25. Restart Postgres</h2>
+<p><em>User: sudo</em><br>If you updated any extensions, you may want to restart Postgres to clear any shared memory or lingering cache. This is precautionary only (as in, no evidence was found that this was required).</p>
+<h2 id="unblock-database-server-access"><BR>26. Unblock database server access</h2>
+<p><em>User: sudo</em><br>Open up the Postgres server to connections (hint, it’s the converse of step #7)</p>
+<pre><code>sudo iptables -D INPUT -j DROP -p tcp --destination-port ${PGPORT} -i eth0</code></pre>
+<p>Note: to check the status of ports:</p>
+<pre><code>sudo iptables -nvL</code></pre>
+<h2 id="start-services"><BR>27. Start services</h2>
+<p>Start any business-specific services. This could be micro-services, web UI’s, API’s, basically whatever you stopped at step #6.</p>
+<h2 id="update-service-discovery-systems"><BR>28. Update service discovery systems</h2>
+<p>If your business has any service discovery systems (for example, <a href="https://www.consul.io/">Consul</a>, <a href="https://zookeeper.apache.org/">Zookeeper</a>, <a href="https://coreos.com/etcd/">etcd</a>) that need to be updated, now is probably a good time to do that.</p>
+<h2 id="remove-facts"><BR>29. Remove facts</h2>
+<p>Remove the <code>pg10_upgrade_in_progress</code> Fact and <code>do_not_run_backup</code> file so that scheduled jobs can run as usual. Again, which files and/or Facts are specific to your situation.</p>
+<h2 id="resume-alerting"><BR>30. Resume alerting</h2>
+<p>Unpause any alerting systems that were paused in step #3.</p>
+<h2 id="analyze-vacuum"><BR>31. ANALYZE &amp; VACUUM</h2>
+<p><em>User: postgres</em><br>ANALYZE, then VACUUM all databases in your cluster. If some databases require more immediate attention, do those first. The recommended method is to use <a href="https://www.postgresql.org/docs/current/static/app-vacuumdb.html">vacuumdb</a> which allows the process to use multiple worker processes to complete faster, at the expense of server resources. Knowledge of your server’s resource limits will determine if changing the number of jobs in the vacuumdb command is desirable.</p>
+<pre><code># Sample psql commands
+psql -h localhost -p ${PGPORT} -d &quot;$DBNAME&quot; -U postgres -P pager=off -qtAXc &#39;ANALYZE&#39;
+psql -h localhost -p ${PGPORT} -d &quot;$DBNAME&quot; -U postgres -P pager=off -qtAXc &#39;VACUUM&#39;
+
+# Or using vacuumdb
+# ANALYZE using vacuumdb
+vacuumdb -h localhost --dbname=&quot;$DBNAME&quot; --analyze-in-stages -p ${PGPORT} -U postgres --jobs=5
+# VACUUM using vacuumdb
+vacuumdb -h localhost --dbname=&quot;$DBNAME&quot; --verbose -p ${PGPORT} -U postgres --jobs=5</code></pre>
+<p>A <a href="https://github.com/bricklen/pg-scripts/blob/master/vacuum_progress.sql">useful query</a> to track vacuum progress in Postgresql 10, based on the <a href="https://www.postgresql.org/docs/current/static/progress-reporting.html#VACUUM-PROGRESS-REPORTING">pg_stat_progress_vacuum</a> view.</p>
+<pre><code>SELECT
+    p.pid,
+    clock_timestamp() - a.xact_start AS duration,
+    coalesce(wait_event_type ||&#39;.&#39;|| wait_event, &#39;f&#39;) AS waiting,
+    (CASE
+        WHEN a.query ~ &#39;^autovacuum.*to prevent wraparound&#39; THEN &#39;wraparound&#39;
+        WHEN a.query ~ &#39;^vacuum&#39; THEN &#39;user&#39;
+        ELSE &#39;regular&#39;
+    END) AS mode,
+    p.datname AS database,
+    p.relid::regclass AS table,
+    p.phase,
+    pg_size_pretty(p.heap_blks_total *
+        current_setting(&#39;block_size&#39;)::int) AS table_size,
+    pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+    pg_size_pretty(p.heap_blks_scanned *
+        current_setting(&#39;block_size&#39;)::int) AS scanned,
+    pg_size_pretty(p.heap_blks_vacuumed *
+        current_setting(&#39;block_size&#39;)::int) AS vacuumed,
+    (CASE WHEN p.heap_blks_total &gt; 0 THEN
+        round(100.0 * p.heap_blks_scanned /
+            p.heap_blks_total, 1) else 0 end) AS scanned_pct,
+    (CASE WHEN p.heap_blks_total &gt; 0 THEN
+        round(100.0 * p.heap_blks_vacuumed /
+            p.heap_blks_total, 1) else 0 end) AS vacuumed_pct,
+    p.index_vacuum_count,
+    round(100.0 * p.num_dead_tuples /
+        p.max_dead_tuples,1) AS dead_pct
+FROM pg_catalog.pg_stat_progress_vacuum AS p
+JOIN pg_catalog.pg_stat_activity AS a USING (pid)
+ORDER BY duration DESC;</code></pre>
+<h2 id="test-indexes"><BR>32. Test indexes</h2>
+<p><em>User: postgres</em><br>Using <a href="https://www.postgresql.org/docs/current/static/amcheck.html">amcheck</a>, test for any broken indexes. Note that the version of <a href="https://github.com/petergeoghegan/amcheck">amcheck</a> (by Peter Geoghegan) might be newer than the version we used, and have new features, so check there for updates.</p>
+<pre><code># This anonymous pl/pgsql block should be run on the active primary
+# It will emit a line for any index that appears to be corrupted.
+# Comment out the &quot;AND n.nspname = &#39;pg_catalog&#39;&quot; line if you want to check
+#   every index and not just the system catalog indexes.
+DO $$
+DECLARE
+    rec RECORD;
+    current_index TEXT;
+BEGIN
+IF (select true from pg_catalog.pg_extension where extname like &#39;amcheck%&#39;) IS TRUE THEN
+    FOR rec IN
+        SELECT  n.nspname as schema_name,
+                c.relname as index_name,
+                c.relpages,
+                c.oid as index_oid
+        FROM pg_index i
+        JOIN pg_opclass op ON i.indclass[0] = op.oid
+        JOIN pg_am am ON op.opcmethod = am.oid
+        JOIN pg_class c ON i.indexrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE am.amname = &#39;btree&#39;
+        AND n.nspname = &#39;pg_catalog&#39; /* comment out to check all indexes */
+        -- Don&#39;t check temp tables, which may be from another session
+        -- and do not check unlogged relations.
+        AND c.relpersistence not in (&#39;u&#39;,&#39;t&#39;)
+        -- Function may throw an error when this is omitted:
+        AND i.indisready
+        AND i.indisvalid
+        AND c.relkind = &#39;i&#39;
+        ORDER BY n.nspname, c.relname
+    LOOP
+        BEGIN
+            current_index := coalesce(rec.schema_name::TEXT,&#39;public&#39;)||&#39;.&#39;||rec.index_name::TEXT;
+            --RAISE NOTICE &#39;About to check index %&#39;, current_index;
+            PERFORM bt_index_check(index =&gt; rec.index_oid);
+            PERFORM bt_index_parent_check(index =&gt; rec.index_oid);
+        EXCEPTION
+            WHEN others THEN
+                RAISE WARNING &#39;Failed index check for index %&#39;,current_index;
+        END;
+    END LOOP;
+ELSE
+    RAISE NOTICE &#39;&quot;amcheck&quot; extension does not appear to be installed.&#39;;
+END IF;
+END;
+$$;</code></pre>
+<h2 id="upgrade-remote-secondary-replica"><BR>33. Upgrade <code>remote secondary</code> replica</h2>
+<p><em>User: postgres</em><br>Rebuild the <code>remote secondary</code> replica from the <code>remote primary</code> using whatever method works best for your environment. Within the LAN we use <a href="https://www.postgresql.org/docs/current/static/app-pgbasebackup.html">pg_basebackup</a> to rebuild physical replication to the hot standby. Over the WAN, we also use pg_basebackup, but it is done through an ssh tunnel with compression. Before you start this step, ensure the <code>remote primary</code> replica has applied any WALs generated by the <code>active primary</code> since the rsync finished, so <a href="https://www.postgresql.org/docs/current/static/wal-configuration.html">restartpoints</a> can force its state to disk.</p>
+<pre><code># Sample pg_basebackup command, run as postgres, on the remote secondary replica.
+# Modify to suit your environment.
+# ACTIVE_OR_REMOTE_PRIMARY is the IP/host of the upstream source.
+pg_basebackup --pgdata=$PGDATA --host=$ACTIVE_OR_REMOTE_PRIMARY \
+--port=$PGPORT --username=replication --no-password \
+--wal-method=stream --format=plain --progress --verbose</code></pre>
+<h2 id="clean-up-the-hosts"><BR>34. Clean up the hosts</h2>
+<p><em>User: postgres</em><br>For each server that has been upgraded, clean up the cruft from the older version of Postgres.</p>
+<pre><code># Check if Postgres is up before proceeding.
+/usr/pgsql-10/bin/pg_isready -q -t3 -p ${PGPORT} &amp;&amp; RET=0 || RET=1
+if [ &quot;$RET&quot; -ne 0 ]; then
+    # Abort, Postgres does not appear to be running.
+    echo &quot;Postgres does not appear to be running. Investigate.&quot;
+    return
+fi</code></pre>
+<p>Clean up cruft.</p>
+<pre><code># Check that the cluster is running Postgres 10
+postgres_version=$(cat ${PGDATA}/PG_VERSION)
+if [ -n &quot;$postgres_version&quot; ] &amp;&amp; [ &quot;$postgres_version&quot; -eq 10 ]; then
+    # WARNING: Replace the PGDATAOLD variable below with the
+    #   old cluster name (if different). If you have been following these steps,
+    #   it should have &quot;93&quot; as the suffix (your suffix could be different).
+    rm -rf ${PGDATAOLD}93
+fi</code></pre>
+<h2 id="upgrade-active-secondary-replica-next-day"><BR>35. Upgrade <code>active secondary</code> replica [next day]</h2>
+<p>We chose to wait 24 hours after the main Postgres 10 upgrade to upgrade the remaining member of the replica set, the <code>active secondary</code> replica. The reason was, we were monitoring closely to be sure that the upgrade didn’t have any bugs or problems that would manifest after a full day of production-level usage. If so, we could use the still-at-Postgres-9.3 database cluster as our failsafe instance. After 24 hours our <a href="https://en.wikipedia.org/wiki/Recovery_point_objective">RPO</a> would be violated, so if we <em>did</em> need to use that particular replica, it would need to be recovered from backup <em>if we were past the 24 hour mark</em>; thus keeping that server at PG 9.3 was no longer desirable 24 hours after the initial replica set upgrade.</p>
+<p>Note: This secondary upgrade process was run by a second Jenkins pipeline, devoted strictly to updating the secondary replicas, but for the sake of clarity that process has been merged into the main timeline in this document.</p>
+<p>The steps you’ll likely need to run are: <a href="#pause-alerting">3</a>, <a href="#set-facts">4</a>, <a href="#install-the-version-of-postgres-you-are-going-to-upgrade-to-pg10">5</a>, <a href="#stop-postgres-9.3">13</a>. Next step is rebuild the <code>active secondary</code> replica from the <code>active primary</code>. As shown in step <a href="#upgrade-remote-secondary-replica">33</a>, we use <code>pg_basebackup</code>.</p>
+<p>Then continue on with steps <a href="#update-symlinks-and-replace-the-old-data-directory-with-the-new-one">17</a>, <a href="#mv-the-new-postgres-10-data-directory-to-pgdata">18</a>, <a href="#add-recovery.conf-to-the-remote-primary-hot-standby">19</a>, <a href="#update-services">20</a>, <a href="#start-postgres-10">21</a>, <a href="#remove-facts">29</a>, <a href="#resume-alerting">30</a>, <a href="#clean-up-the-hosts">34</a>.</p>
+
+<h2 id="failure-cases"><BR>Failure Cases</h2>
+<p>Note that this is only a subset of the scenarios we listed and planned for that could impact us during various stages of the upgrade.</p>
+<p><strong>Problem</strong>: Middle of rsync to <code>remote primary</code> replica, loss of remote DC. <br><strong>Solution</strong>: The priority here is to get the <code>active primary</code> open for the client within the outage window, otherwise we will violate our <a href="https://en.wikipedia.org/wiki/Service-level_agreement">SLA</a>s. Bring this database up (ensure beforehand you have recent and working backups!), and rebuild replication using pg_basebackup once the remote DC is available again.</p>
+    <p><strong>Problem</strong>: Middle of rsync to <code>remote primary</code>, the rsync fails. <br><strong>Solution</strong>: If you have time within your downtime window to retry the rsync, do so. Any files that have already been transferred will not be transferred again (assuming you are using the rsync command suggested at step <a href="#rsync-changes-to-the-remote-primary-replica">16</a>). If you are in jeopardy of overrunning the downtime window, cancel the rsync job and continue on with the steps to open the <code>active primary</code> up for general use, and follow up with a replication rebuild to the <code>remote primary</code>. Note that if this occurs, you do not have a strong disaster recovery (DR) failover target until the replication finishes successfully, other than the <code>remote secondary</code> which is still on the earlier version of Postgres.</p>
+<p><strong>Problem</strong>: Failure of pg_upgrade on the <code>active primary</code>. <br><strong>Solution</strong>: Attempt to revert to original (9.3) version. If this fails, promote the <code>active secondary</code> hot standby as the new master. Alternatively, fail over to the <code>remote primary</code> hot standby.</p>
+<p><strong>Problem</strong>: The <code>active primary</code> and remote replicas are corrupted, leaving only the <code>active secondary</code> replica as a viable candidate, which still at version 9.3. <br><strong>Solution</strong>: <a href="https://en.wikipedia.org/wiki/STONITH">STONITH</a> all members of replica set, other than the single working Postgres cluster. Take a backup immediately if you can, and ensure it does not overwrite any existing backups. If you suspect physical corruption of your database, stop the database and take a file-system copy and store it somewhere safe in case it becomes necessary for disaster recovery or later analysis.</p>
+<p><strong>Problem</strong>: Loss of all databases in a replica set. <br><strong>Solution</strong>: Recover from backup.</p>
+<p><strong>Problem</strong>: Bug in the database software corrupts the <code>active-master</code>. <br><strong>Solution</strong>: Fail over to the <code>remote primary</code>, be vigilant for other examples of the bug manifesting. Upgrade to the newest version of Postgres if one exists. Create a detailed case to send to the Postgresql core developers (ideally with reproduction steps) for analysis and bug fixing.</p>
+<p><strong>Problem</strong>: Bug in the database software takes out many Postgres servers. <br><strong>Solution</strong>: Spin up a new replica sets with a older major version of Postgres and restore backups to these new servers.</p>
+<p><strong>Problem</strong>: Corrupted indexes. <br><strong>Solution</strong>: REINDEX the affected indexes. If corruption reoccurs, there might be an underlying hardware issue, or software bug. See the Postgres <a href="https://wiki.postgresql.org/wiki/Corruption">wiki</a> for more details.</p>
+<h2 id="notes"><BR>Notes</h2>
+<ol style="list-style-type: decimal">
+<li>Regular meetings with stakeholders was crucial to stay on track and keep everyone informed of the progress of the planning, and the execution. The stakeholders comprised Engineering and QA leads, and the business and support leads. The latter were on the front line dealing with client expectations and keeping clients informed of our progress, as well as dealing with any customer issues or questions as we progressed through the execution phase. The main team (the three of us executing the changes) were in constant communication, and the weekly meetings included the stakeholders. It is very important that the lines of communication remain open and frictionless, to ensure the best outcome possible, and we were fortunate to have a great team involved with this large undertaking.</li>
+<li>Because we jumped so many major Postgres versions, strenuous load testing in production-like environments is highly recommended. In one case, an important function used to recursively resolve group memberships became roughly 20% slower (a difference of a few tens of milliseconds) but that was enough to cause an overall decrease in performance of a critical part of our application. This is the kind of issue that is best caught in development/test and fixed before it can make it to production.</li>
+<li>Peer review of all changes was very helpful in catching potential problems before we proceeded with the upgrade. The old adage “can’t see the forest for the trees” came into play at times, when were became so focused on the immediate changes that we were neglecting some of the bigger picture. Fortunately the manager running the project was very good at his job and regularly asked questions to get us to refocus on what we were trying to achieve from a higher level.</li>
+<li>Clear documentation, with diagrams, is a valuable aid to explaining to others what we were trying to achieve and to forestall some of the questions about the upgrade would work.</li>
+<li>A clear timeline to follow, with milestones, is critical to help stay on track. Be realistic with your timelines, there are always going to be failures or things that come up that cause slippage in your dates and times, so add some buffer to your estimates to account for that.</li>
+<li>During testing, invest in your test harness. If you are able to create production-like loads there will be fewer surprises when you execute the migration for real.</li>
+</ol>
+<h2 id="extras"><BR>Extras</h2>
+PostgreSQL pg_upgrade docs: <a href="https://www.postgresql.org/docs/current/static/pgupgrade.html">pg_upgrade</a>
+<BR>
+<a href="https://lists.postgresql.org/">Postgresql mailing lists</a>
+<BR>
+<a href="https://www.postgresql.org/community/irc/">Postgresql IRC</a>
+<BR>
+</div>
+</body>
+</html>
