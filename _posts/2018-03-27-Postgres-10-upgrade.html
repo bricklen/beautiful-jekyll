@@ -81,14 +81,14 @@ Almost all the database servers were virtual machines, running Linux, with vario
 Every facet of the upgrade had to be executed programatically, with no manual steps, and must not exceed the stated maintenance window.
 Additionally, upgrades must be performed with minimal measurable storage I/O and network impact, to reduce any “noisy neighbour” impact to other VM’s.
 </p>
-<p><strong>Note to readers</strong>: The upgrade steps for the “upgrade-from&quot; Postgres version in this document should be nearly identical for all versions of Postgres from 9.2 - 9.6 (not just Postgres 9.3 which was the version we upgraded from). That being said, if these steps are going to be followed in production, test each one first to ensure they are complete, and correct, in your environment.<BR>The usual disclaimers apply: we are not liable or responsible is anyone chooses to follow these steps and bad things happen.</p>
+<p><strong>Note to readers</strong>: The upgrade steps for the “upgrade-from&quot; Postgres version in this document should be nearly identical for all versions of Postgres from 9.2 - 9.6 (not just Postgres 9.3 which was the version we upgraded from). That being said, if these steps are going to be followed in production, test each one first to ensure they are complete, and correct, in your environment.<BR>The usual disclaimers apply: we are not liable or responsible if anyone chooses to follow these steps and bad things happen.</p>
 <p>
-    Special thanks to the other members of our team, Mike Bennett and <a href="https://github.com/dgorley">Doug Gorley</a>. Mike was the team lead, project manager, and juggler of too many meetings. He did a phenomenal job of coordinating the work and keeping the project on track, and successfully managed expectations at every step of the process. Doug was the primary developer/automator/DevOps person and wrote all the Python and Jenkins jobs to link and execute the tasks. The third member of the PG10 upgrade trio was <a href="https://github.com/bricklen">Bricklen Anderson</a>, the Postgres DBA and the designer/architect of the project.
+    Special thanks to the other members of our team, Mike Bennett and <a href="https://github.com/dgorley">Doug Gorley</a>. Mike was the team lead, project manager, and juggler of too many meetings. He did a phenomenal job of coordinating the work and keeping the project on track, and successfully managed expectations at every step of the process. Doug was the primary developer/automator/DevOps person and wrote all the Python and Jenkins jobs to link and execute the tasks. The third core member of the PG10 upgrade trio was <a href="https://github.com/bricklen">Bricklen Anderson</a>, the Postgres DBA and the designer/architect of the project.
     <BR>
-    As with any major undertaking, it takes many people to design, implement, test, and execute a significant project and this one was no different. There are too many to name, but I’d to thank the many contributors that ensured this project was a success, including the QA team (especially QA Architect, <a href="https://www.xmatters.com/author/deepa-guna">Deepa Guna</a>), Customer Support, Engineering Support, and IT Operations.
+    As with any major undertaking, it takes many people to design, implement, test, and execute a significant project and this one was no different. There are too many to name, but I’d to thank the many contributors that ensured this project was a success, including the QA team (especially the indefatigable QA Architect, <a href="https://www.xmatters.com/author/deepa-guna">Deepa Guna</a>), Customer Support, Engineering Support, and IT Operations.
 </p>
 <h2 id="topology"><BR>Topology</h2>
-We’ll call the primary production Postgres cluster and it’s associated hot standby’s a <code>replica set</code>, since a database “cluster” in Postgres <a href="https://www.postgresql.org/docs/current/static/creating-cluster.html">terminology</a> refers to “<em>a collection of databases that is managed by a single instance of a running database server</em>”. Our replica sets typically consist of a primary and three hot standby servers spread across data centres in multiple geographic regions of North America, EMEA, and APAC.
+We’ll call the primary production Postgres cluster and its associated hot standbys a <code>replica set</code>, since a database “cluster” in Postgres <a href="https://www.postgresql.org/docs/current/static/creating-cluster.html">terminology</a> refers to “<em>a collection of databases that is managed by a single instance of a running database server</em>”. Our replica sets typically consist of a primary and three hot standby servers spread across data centres in multiple geographic regions of North America, EMEA, and APAC.
 <BR><img src="https://d2mxuefqeaa7sj.cloudfront.net/s_C93100B6D4608946B98FA1A05EBD5227C9AD3CA02FEEB5FC092CFF49E529462F_1518901754777_topology.png" alt="Typical replica set" />
 
 <h2 id="the-plan"><BR>The Plan</h2>
@@ -99,9 +99,9 @@ To start, we had to come up with a plan to accomplish the upgrades within the sh
     <li>Determine all services that can access the databases, and test the impact of the Postgres major version upgrade in our dev and staging environments. This included the many micro-services, upgrading to the newest JDBC version, connection poolers, various monitoring tools, internal reporting tools, and catching and fixing any differences between dev, test, staging, and production environments. JDBC turned out to be an important thing to test; we discovered that one service was relying on deprecated functionality in JDBC, and we needed to make some changes in the configuration to get it work properly after the upgrade. It took some time to track down, so testing well in advance was important.</li>
     <li>Determine the new PG 10 settings we wanted or needed to implement, including any changes to deprecated views, tables, and functions. We will be using <a href="https://www.postgresql.org/docs/current/static/logical-replication.html">Logical Replication</a> in the future, so a few changes to the <code>postgresql.conf</code> were also necessary.
     <li>Test the new settings thoroughly in the many dev, test, and staging environments, which included extensive <a href="https://en.wikipedia.org/wiki/Soak_testing">soak testing</a>.</li>
-    <li>Document the steps we expect to execute.</li>
+    <li>Document the steps we expected to execute.</li>
     <li>Test the process we came up with.</li>
-    <li>Fix the docs, fix the steps, and work with the Engineering team to get all changes we needed looped back into our application and various micro-services.</li>
+    <li>Fix the docs, tweak the steps, then work with the Engineering team to get all changes we needed looped back into our application and various micro-services.</li>
     <li>Put the steps into a Jenkins pipeline to execute.</li>
     <li>Test, find problems, fix. Lather, rinse, repeat.</li>
 </ul>
@@ -111,7 +111,7 @@ To start, we had to come up with a plan to accomplish the upgrades within the sh
 <BR>
 This document shows the steps and the commands that are not Jenkins-specific, and have been sanitized to be much less specific to our environments, with the intention that others may benefit from the commands listed in this doc.</p>
 <i class="fa fa-info-circle"></i> Steps <a href="#block-database-server-access">7</a> through <a href="#unblock-database-server-access">26</a> comprise the actual downtime window, when access to the database servers has been blocked.
-<p>🎉 Allow me to take a moment to give shout-out to our QA team, who did an enormous amount of testing prior to going live with this huge project - it was critical work, and proved its value in the near-flawless upgrades we conducted.</p>
+<p>🎉 Allow me to take a moment to give well-deserved shout-out to our QA team, who did an enormous amount of testing prior to going live with this huge project - it was critical work, and proved its value in the near-flawless upgrades we conducted.</p>
 The steps in this document assume the following settings (change to suit your env):
 <pre>
 <code>PGBASEDIR=/var/lib/pgsql
@@ -123,7 +123,8 @@ PGBINNEW=/usr/pgsql-10/bin
 PGPORT=5432</code>
 </pre>
 All steps are executed as the <code>postgres</code> OS user unless otherwise noted.
-<p>Alright, it's time for the nitty gritty, the Postgres upgrade steps themselves…</p>
+<BR>
+Alright, it's time for the nitty gritty, the Postgres upgrade steps themselves…
 
 <h2 id="determine-the-hosts"><BR>1. Determine the Hosts</h2>
 <p>For every replica set, determine the IP or host address for each database cluster, and their functions. As mentioned, our servers function as:</p>
@@ -135,7 +136,7 @@ All steps are executed as the <code>postgres</code> OS user unless otherwise not
 </ul>
 
 <h2 id="pre-upgrade-settings"><BR>2. Pre-upgrade settings</h2>
-<p>If there are jobs that may run or could run when the start of the scheduled maintenance window commences, those jobs should be prevented from starting.
+<p>If there are jobs that may run or could run when the start of the scheduled maintenance window commences, they should be prevented from starting.
 <BR><strong>Note</strong>: Execute this step up to a few hours before your window, so there is no chance of a job starting before the window and running long.</p>
 <p>For example, if database backups commonly take two hours to run, create a <code>do_not_execute_backup</code> file on the database servers four hours in advance, and in your scheduling service (eg. cron) check for the existence of that file. If found, do not execute the backup.</p>
 
@@ -145,16 +146,20 @@ All steps are executed as the <code>postgres</code> OS user unless otherwise not
 0 7,17,23 * * * [ ! -e &#39;/path/to/do_not_execute.flag&#39; ] &amp;&amp; /path/to/backup_script.sh
 </pre>
 
-<p>This would apply to any other tasks that might run during the upgrade, for example. <a href="https://en.wikipedia.org/wiki/Extract,_transform,_load">ETL</a>, long-running reports, scheduled maintenance tasks, or other business-specific jobs.</p>
-<i class="fa fa-info-circle"></i> If there is any notification to clients and stakeholders that must be done well in advance, this is when that would happen.
-<p>At some point between now and the start of the outage window, you could take bootstrap backups of databases to be upgraded. This is one of several methods to meet RPO’s, and these occur before and after the PG 10 upgrades. In our case a “bootstrap backup” is a fast, minimal backup of all the tables that are critical to the core business. These backups answer the question “What data is necessary to get clients back up and running again with critical functionality?”. These backups could be exported as plain-text backups for maximum portability between Postgres versions (not critical, but sensible).</p>
+<p>This would also apply to any other tasks that might run during the upgrade. For example, <a href="https://en.wikipedia.org/wiki/Extract,_transform,_load">ETL</a>, long-running reports, scheduled maintenance tasks, or other business-specific jobs.</p>
+<i class="fa fa-info-circle"></i> If any notice must be given to clients and stakeholders well in advance, now is a good time to do that.
+<p>At some point between now and the start of the outage window, you could take bootstrap backups of databases to be upgraded. This is one of several methods to meet RPO’s, and these occur before and after the PG 10 upgrades. In our case a “bootstrap backup” is a fast, minimal backup of all the tables that are critical to the core business. These backups answer the question “What data is necessary to get clients back up and running again with critical functionality?”.
+They could be exported as plain-text backups for maximum portability between Postgres versions (not critical, but sensible).</p>
+
 <h2 id="pause-alerting"><BR>3. Pause alerting</h2>
 <p>For each alerting application you are using, pause the alerting capabilities prior to continuing. For example, if you are using Pingdom, Sensu, and <a href="https://www.xmatters.com">xMatters</a>, execute the relevant API calls to prevent any page-outs for the hosts you are working on.</p>
+
 <h2 id="set-facts"><BR>4. Set Facts</h2>
 <p><em>User: sudo</em><br>We are using Puppet’s <a href="https://docs.puppet.com/facter/">Facter</a> to track the server-and-role-specific details (aka “facts”) on the servers, and the states that our micro-services and tooling depend on. At the start of the process we set a Fact called <code>pg10_upgrade_in_progress</code> to <code>true</code>. Any services that have been configured to read that file will know to follow the appropriate branch of operations if the upgrade process is in flight.</p>
+
 <h2 id="install-the-version-of-postgres-you-are-going-to-upgrade-to-pg10"><BR>5. Install the version of Postgres you are going to upgrade to (PG10)</h2>
-<p><em>User: sudo</em><br>Choose the <a href="https://yum.postgresql.org/repopackages.php#pg10">PGDG</a> package that corresponds to your linux distribution.</p>
-<p>Because our environments run a mix of RedHat/CentOS 6 and 7, different packages were needed for each distribution and version. We installed the rpms using <code>rpm -Uvh</code> rather than via <code>yum</code> because we needed to control the exact packages and actions (no side-effects), though that required we install packages in a specific order to satisfy dependencies.</p>
+<p><em>User: sudo</em><br>Choose the <a href="https://yum.postgresql.org/repopackages.php#pg10">PGDG</a> package that corresponds to your linux distribution.
+Because our environments run a mix of RedHat/CentOS 6 and 7, different packages were needed for each distribution and version. We installed the rpms using <code>rpm -Uvh</code> rather than via <code>yum</code> because we needed to control the exact packages and actions (no side-effects), though that required we install packages in a specific order to satisfy dependencies.</p>
 <p><strong>Tip:</strong> To save time and bandwidth during the upgrades, download the packages ahead of time and save them to a location accessible to the database servers within the LAN.
 <strong>Note</strong>: Be sure to verify the checksums of each package if you are building from source.</p>
 
@@ -217,6 +222,7 @@ cp -p ${PGDATAOLD}/recovery.conf ${PGBASEDIR}/confbkp/recovery.conf.93 # if exis
 <p><em>User: postgres</em>
 <br>Changes to the <a href="https://www.postgresql.org/docs/current/static/monitoring-stats.html#PG-STAT-ACTIVITY-VIEW">pg_stat_activity</a> view rendered some of the views in our databases unusable, and more importantly, were causing the <code>pg_upgrade</code> process to fail if those views and functions were not dropped <strong>before</strong> the upgrade was executed.</p>
 <p>If incompatible views and functions exist in your environment, remove them at this point. Some incompatibilities are listed at:
+<br>
 <a href="https://wiki.postgresql.org/wiki/New_in_postgres_10#Backwards-Incompatible_Changes">https://wiki.postgresql.org/wiki/New_in_postgres_10#Backwards-Incompatible_Changes</a>
 <br>
 <a href="https://wiki.postgresql.org/wiki/New_in_postgres_10#Backwards-Incompatible_Changes">http://paquier.xyz/postgresql-2/postgres-10-incompatible-changes/</a>
@@ -246,7 +252,7 @@ time ${PGBINNEW}/pg_upgrade \
 --username=postgres
 --check # &lt;-- this is dry-run option</code></pre>
 <h2 id="send-wal-to-remote-primary"><BR>12. Send WAL to remote primary</h2>
-<p><em>User: postgres</em><br>The purpose of this step is to flush any changes to the Write Ahead Logs (WAL), and send the current WAL segment(s) to the <code>remote primary</code> replica. This step is not strictly necessary, as a graceful shutdown will generate a final WAL segment on the <code>active primary</code> to be shipped to the <code>remote primary</code> (assuming you are using WAL shipping, if you are using only Streaming Replication then this is unnecessary).
+<p><em>User: postgres</em><br>The purpose of this step is to flush any changes to the Write Ahead Logs (WAL), and send the current WAL segment(s) to the <code>remote primary</code> replica. This step is not strictly necessary, as a graceful shutdown will generate a final WAL segment on the <code>active primary</code> to be shipped to the <code>remote primary</code> (assuming you are using WAL shipping; if you are using Streaming Replication then this is unnecessary).
 <br>
 Note that if you are using pg_receivexlog/<a href="https://www.postgresql.org/docs/current/static/app-pgreceivewal.html">pg_receivewal</a> the need to ship WALs is virtually eliminated, as long as your WAL is sending to the replicas successfully.
 </p>
