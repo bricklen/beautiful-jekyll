@@ -238,21 +238,21 @@ ${PGBINNEW}/initdb --pgdata=&quot;$PGDATANEW&quot; --encoding=UTF8 --data-checks
 
 <code># As postgres OS user, cd to the dir above $PGDATA
 cd ${PGBASEDIR}
-
-# The "jobs" setting is based on the number of CPU cores - 1,
-#   though in our environments we opted for a max of 4 cores.
-# The "time" command is to get a wall-clock timing of the operation.
-time ${PGBINNEW}/pg_upgrade \
---old-bindir=${PGBINOLD} \
---new-bindir=${PGBINNEW} \
---old-datadir=${PGDATAOLD} \
---new-datadir=${PGDATANEW} \
---old-port=${PGPORT} \
---new-port=${PGPORT} \
---jobs=$(nproc | awk '{{print ($1 > 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)}}') \
---link \
---username=postgres
---check # &lt;-- this is dry-run option</code>
+<BR>
+<BR># The "jobs" setting is based on the number of CPU cores - 1,
+<BR>#   though in our environments we opted for a max of 4 cores.
+<BR># The "time" command is to get a wall-clock timing of the operation.
+<BR>time ${PGBINNEW}/pg_upgrade \
+<BR>--old-bindir=${PGBINOLD} \
+<BR>--new-bindir=${PGBINNEW} \
+<BR>--old-datadir=${PGDATAOLD} \
+<BR>--new-datadir=${PGDATANEW} \
+<BR>--old-port=${PGPORT} \
+<BR>--new-port=${PGPORT} \
+<BR>--jobs=$(nproc | awk '{{print ($1 > 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)}}') \
+<BR>--link \
+<BR>--username=postgres
+<BR>--check # &lt;-- this is dry-run option</code>
 <h2 id="send-wal-to-remote-primary"><BR>12. Send WAL to remote primary</h2>
 <p><em>User: postgres</em><br>The purpose of this step is to flush any changes to the Write Ahead Logs (WAL), and send the current WAL segment(s) to the <code>remote primary</code> replica. This step is not strictly necessary, as a graceful shutdown will generate a final WAL segment on the <code>active primary</code> to be shipped to the <code>remote primary</code> (assuming you are using WAL shipping; if you are using Streaming Replication then this is unnecessary).
 <br>
