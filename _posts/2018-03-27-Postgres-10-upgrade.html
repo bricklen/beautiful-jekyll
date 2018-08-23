@@ -227,6 +227,7 @@ cp -p ${PGDATAOLD}/recovery.conf ${PGBASEDIR}/confbkp/recovery.conf.93 # if exis
 <br>
 <a href="https://wiki.postgresql.org/wiki/New_in_postgres_10#Backwards-Incompatible_Changes">http://paquier.xyz/postgresql-2/postgres-10-incompatible-changes/</a>
 </p>
+    <p>If you have any UNLOGGED tables, you might want to TRUNCATE those before shutting down the primary Postgres cluster. UNLOGGED tables are not propagated to replicas, so rsync'ing those tables to the replica is a waste of time and resources. Hat tip to Stephen Frost of <a href="https://www.crunchydata.com/">Crunchy Data</a> for pointing this out.</p>
 <h2 id="pg10-initdb"><BR>10. PG10 initdb</h2>
 <p><em>User: postgres</em></p>
 This step creates the new Postgres 10 cluster, which starts empty, but will be relinked to the files in the existing data directory via pg_upgrade.
@@ -363,6 +364,7 @@ time rsync --archive --progress --delete --hard-links --no-perms \
 One oddity we encountered a few times that has to-date not been explained well enough for my liking is an issue with the <code>remote primary</code> not coming up cleanly after the rsync, with timeline errors being thrown in the log.
 My current theory is that pg_upgrade is resetting the <a href="https://github.com/postgres/postgres/blob/REL_10_STABLE/src/bin/pg_upgrade/pg_upgrade.c#L500">timeline to 1</a>, and in some cases we have previously failed-over which incremented the timeline at some point far in advance of the pg_upgrade run. It is possible that we didn’t copy the history file over to the <code>remote primary</code> properly, so it could not determine that the timeline had been reset - a timeline increment would likely have “just worked” thanks to <code>recovery_target_timeline=latest</code> in the <code>recovery.conf</code>, but a timeline decrement needs different handling.
 <BR>This is only a theory though, as the rare cases where replication did not work properly the first time we had to kick off a physical replication rebuild job without delay, thus removing any chance for further investigation.
+<BR>
 </p>
 
 <h2 id="update-symlinks-and-replace-the-old-data-directory-with-the-new-one"><BR>17. Update Symlinks and replace the old data directory with the new one</h2>
