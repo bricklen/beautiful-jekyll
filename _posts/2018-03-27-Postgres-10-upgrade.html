@@ -249,7 +249,7 @@ time ${PGBINNEW}/pg_upgrade \
 --new-datadir=${PGDATANEW} \
 --old-port=${PGPORT} \
 --new-port=${PGPORT} \
---jobs=$(nproc | awk '\{\{print ($1 > 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)\}\}') \
+--jobs=$(nproc | awk '{ {print ($1 > 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)} }') \
 --link \
 --username=postgres
 --check # &lt;-- this is dry-run option</code></pre>
@@ -315,7 +315,7 @@ time ${PGBINNEW}/pg_upgrade \
 --new-datadir=${PGDATANEW} \
 --old-port=${PGPORT} \
 --new-port=${PGPORT} \
---jobs=$(nproc | awk &#39;{{print ($1 &gt; 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)}}&#39;) \
+--jobs=$(nproc | awk '{ {print ($1 > 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)} }') \
 --link \
 --username=postgres</code></pre>
 
