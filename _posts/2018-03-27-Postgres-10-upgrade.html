@@ -236,8 +236,7 @@ ${PGBINNEW}/initdb --pgdata=&quot;$PGDATANEW&quot; --encoding=UTF8 --data-checks
 <h2 id="pg_upgrade-dry-run-no-changes-made-yet"><BR>11. pg_upgrade dry run (no changes made yet)</h2>
 <p><em>User: postgres</em><br>This is a dry-run of the <a href="https://www.postgresql.org/docs/current/static/pgupgrade.html">pg_upgrade</a> command against the <code>active primary</code> database server. (<em>dry-run</em> means that no changes are made, only the output of what it <em>would</em> have run).</p>
 
-<pre>
-<code># As postgres OS user, cd to the dir above $PGDATA
+<pre><code># As postgres OS user, cd to the dir above $PGDATA
 cd ${PGBASEDIR}
 
 # The "jobs" setting is based on the number of CPU cores - 1,
@@ -253,8 +252,7 @@ time ${PGBINNEW}/pg_upgrade \
 --jobs=$(nproc | awk '{{print ($1 > 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)}}') \
 --link \
 --username=postgres
---check # &lt;-- this is dry-run option</code>
-</pre>
+--check # &lt;-- this is dry-run option</code></pre>
 <h2 id="send-wal-to-remote-primary"><BR>12. Send WAL to remote primary</h2>
 <p><em>User: postgres</em><br>The purpose of this step is to flush any changes to the Write Ahead Logs (WAL), and send the current WAL segment(s) to the <code>remote primary</code> replica. This step is not strictly necessary, as a graceful shutdown will generate a final WAL segment on the <code>active primary</code> to be shipped to the <code>remote primary</code> (assuming you are using WAL shipping; if you are using Streaming Replication then this is unnecessary).
 <br>
