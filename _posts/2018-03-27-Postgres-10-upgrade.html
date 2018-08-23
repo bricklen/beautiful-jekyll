@@ -235,12 +235,13 @@ This step creates the new Postgres 10 cluster, which starts empty, but will be r
 ${PGBINNEW}/initdb --pgdata=&quot;$PGDATANEW&quot; --encoding=UTF8 --data-checksums</code></pre>
 <h2 id="pg_upgrade-dry-run-no-changes-made-yet"><BR>11. pg_upgrade dry run (no changes made yet)</h2>
 <p><em>User: postgres</em><br>This is a dry-run of the <a href="https://www.postgresql.org/docs/current/static/pgupgrade.html">pg_upgrade</a> command against the <code>active primary</code> database server. (<em>dry-run</em> means that no changes are made, only the output of what it <em>would</em> have run).</p>
+
 <pre><code># As postgres OS user, cd to the dir above $PGDATA
 cd ${PGBASEDIR}
 
-# The &quot;jobs&quot; setting is based on the number of CPU cores - 1,
+# The "jobs" setting is based on the number of CPU cores - 1,
 #   though in our environments we opted for a max of 4 cores.
-# The &quot;time&quot; command is to get a wall-clock timing of the operation.
+# The "time" command is to get a wall-clock timing of the operation.
 time ${PGBINNEW}/pg_upgrade \
 --old-bindir=${PGBINOLD} \
 --new-bindir=${PGBINNEW} \
@@ -248,7 +249,7 @@ time ${PGBINNEW}/pg_upgrade \
 --new-datadir=${PGDATANEW} \
 --old-port=${PGPORT} \
 --new-port=${PGPORT} \
---jobs=$(nproc | awk &#39;{{print (&#36;1 &gt; 4) ? 4 : (&#36;1 == 1 ? 1 : &#36;1 - 1)}}&#39;) \
+--jobs=$(nproc | awk "{{print ($1 > 4) ? 4 : ($1 == 1 ? 1 : $1 - 1)}}") \
 --link \
 --username=postgres
 --check # &lt;-- this is dry-run option</code></pre>
