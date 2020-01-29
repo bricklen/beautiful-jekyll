@@ -89,7 +89,7 @@ Additionally, upgrades must be performed with minimal measurable storage I/O and
 </p>
 <h2 id="topology"><BR>Topology</h2>
 We’ll call the primary production Postgres cluster and its associated hot standbys a <code>replica set</code>, since a database “cluster” in Postgres <a href="https://www.postgresql.org/docs/current/static/creating-cluster.html">terminology</a> refers to “<em>a collection of databases that is managed by a single instance of a running database server</em>”. Our replica sets typically consist of a primary and three hot standby servers spread across data centres in multiple geographic regions of North America, EMEA, and APAC.
-<BR><img src="https://github.com/bricklen/bricklen.github.io/blob/master/img/topology.png" alt="Typical replica set" />
+<BR><img src="https://raw.githubusercontent.com/bricklen/bricklen.github.io/master/img/topology.png" alt="Typical replica set" />
 
 <h2 id="the-plan"><BR>The Plan</h2>
 To start, we had to come up with a plan to accomplish the upgrades within the short maintenance window, with no room for failures that could violate the outage window agreement. Here is how we approached this:
